@@ -1,6 +1,7 @@
 ##Dropbox Ignore##
 
 A perl script that allows you to use perl regex to omit certain files from your dropbox. For now, you need three things to use this:
+
 0. A local store of data that you will be linking to Dropbox
 0. An empty Dropbox folder
 0. Perl
