@@ -3,13 +3,15 @@
 use warnings;
 use strict;
 
-use constant DEBUG => 0;
+use constant DEBUG => 1;
 use File::Path "make_path";
 use Cwd "abs_path";
 
 my $real = abs_path($ARGV[0]);
-my $linked = $ARGV[1];
+my $linked = abs_path($ARGV[1]);
 my $ignorefile = ".dropboxignore";
+
+my %linked_files;
 
 debug("Real is $real\nLinked is $linked\n");
 
@@ -59,27 +61,47 @@ sub loadignore {
 		return -1;
 	}
 	my @files = readdir($dh);
+	my %to_link = map { $_ => 1 } @files;
+
 	my @no_link;
 
 	while(my $line = readline($IGN_FILE)) {
 		chomp $line;
 		foreach my $file (@files) {
-			if ($file =~ m/^(\.){1,2}$/) {
+			# We don't want to link to "." or ".."
+			if ($file =~ m/^(\.){1,2}$/ || -d "$fulldir/$file") {
 				next;
 			}
 			elsif ($file !~ m/$line/) {
 				debug("$file doesn't match \"$line\"\n");
 			} else {
-				debug("$file matches \"$file\"\n");
+				debug("$file matches \"$line\"\n");
 				push(@no_link, $file);
 			}
 		}
 	}
+	debug("\@no_link = @no_link\n");
+	delete @to_link{@no_link};
 
-	foreach my $file (@files) {
-		if (!-e "$linked/$subdir/$file" && !-d "$fulldir/$file"
-			&& !(grep(/^$file$/, @no_link))) {
-			dosymlink($fulldir, "$linked/$subdir", $file);
+	foreach my $file (keys %to_link) {
+		if (!-e "$linked/$subdir/$file") {
+			if ($linked_files{"$fulldir/$file"}) {
+				debug("Original $file has been deleted\n");
+				unlink "$fulldir/$file";
+				delete $linked_files{"$fulldir/$file"};
+			} elsif (!-d "$fulldir/$file") {
+				dosymlink($fulldir, "$linked/$subdir", $file);
+				debug("Linked $fulldir/$file\n");
+				$linked_files{"$fulldir/$file"} = 1;
+			}
+		}
+	}
+
+	# Search in linked folder for extra links
+	opendir($dh, "$linked/$subdir");
+	foreach my $file (readdir $dh) {
+		if (!defined($to_link{$file})) {
+			unlink "$linked/$subdir/$file";
 		}
 	}
 }
