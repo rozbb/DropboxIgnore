@@ -51,6 +51,35 @@ sub dosymlink {
 	symlink("$sourcedir/$file", "$targetdir/$file");
 }
 
+sub sync_files {
+	my ($local, $remote, @to_link_arr) = @_;
+	my %to_link = map { $_ => 1 } @to_link_arr;
+
+	foreach my $file (@to_link_arr) {
+		if (!-e "$remote/$file") {
+			# If link is deleted, so must be the hard file to it
+			if ($linked_files{"$local/$file"}) { # If we know it has been linked in the past (not new)
+				debug("Original $file has been deleted\n");
+				unlink "$local/$file";
+				delete $linked_files{"$local/$file"};
+			} elsif (!-d "$local/$file") {
+				dosymlink($local, "$remote", $file);
+				debug("Linked $local/$file\n");
+				$linked_files{"$local/$file"} = 1;
+			}
+		}
+	}
+
+	opendir(my $dh, "$remote");
+
+	# If a file is deleted, so must be the link to it
+	foreach my $file (readdir $dh) {
+		if (!defined($to_link{$file})) {
+			unlink "$remote/$file";
+		}
+	}
+}
+
 sub loadignore {
 	my ($base, $subdir) = @_;
 	my $fulldir = "$base/$subdir";
@@ -82,28 +111,7 @@ sub loadignore {
 	}
 	debug("\@no_link = @no_link\n");
 	delete @to_link{@no_link};
-
-	foreach my $file (keys %to_link) {
-		if (!-e "$linked/$subdir/$file") {
-			if ($linked_files{"$fulldir/$file"}) {
-				debug("Original $file has been deleted\n");
-				unlink "$fulldir/$file";
-				delete $linked_files{"$fulldir/$file"};
-			} elsif (!-d "$fulldir/$file") {
-				dosymlink($fulldir, "$linked/$subdir", $file);
-				debug("Linked $fulldir/$file\n");
-				$linked_files{"$fulldir/$file"} = 1;
-			}
-		}
-	}
-
-	# Search in linked folder for extra links
-	opendir($dh, "$linked/$subdir");
-	foreach my $file (readdir $dh) {
-		if (!defined($to_link{$file})) {
-			unlink "$linked/$subdir/$file";
-		}
-	}
+	sync_files($fulldir, "$linked/$subdir", keys %to_link)
 }
 
 sub iterate {
@@ -114,14 +122,15 @@ sub iterate {
 	}
 
 	#print "Checking $prefix/$dir/$ignorefile\t| ";
-	my $loadall;
+	my $linkall;
+	my @to_link;
 
 	if (-e "$prefix/$dir/$ignorefile") {
 		#	print "Yes\n";
 		loadignore($prefix, $dir);
 	} else {
 		#print "No\n";
-		$loadall = 1;
+		$linkall = 1;
 	}
 
 	my $dh;
@@ -133,9 +142,12 @@ sub iterate {
 			debug("Going to $dir/$item\n\n");
 			iterate($prefix, "$dir/$item");
 			debug("Back in $prefix/$dir:\n");
-		} elsif (defined($loadall) && -f "$prefix/$dir/$item") {
-			dosymlink("$prefix/$dir", "$linked/$dir", $item);
+		} elsif ($linkall && -f "$prefix/$dir/$item") {
+			push(@to_link, $item);
 		}
+	}
+	if ($linkall) {
+		sync_files("$prefix/$dir", "$linked/$dir", @to_link);
 	}
 	debug("Backing out...\n\n");
 }
