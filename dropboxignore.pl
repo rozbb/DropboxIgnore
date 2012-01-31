@@ -5,6 +5,7 @@ use strict;
 
 use constant DEBUG => 1;
 use File::Path "make_path";
+use File::Copy "move";
 use Cwd "abs_path";
 
 my $real = abs_path($ARGV[0]);
@@ -72,11 +73,22 @@ sub sync_files {
 
 	opendir(my $dh, "$remote");
 
+	my $empty = 1;
+
 	# If a file is deleted, so must be the link to it
 	foreach my $file (readdir $dh) {
+		if ($file !~ m/(\.){1,2}/) {
+			$empty = 0;
+		}
+
 		if (!defined($to_link{$file})) {
 			unlink "$remote/$file";
 		}
+	}
+
+	if ($empty) {
+		debug("Empty directory\n");
+		rmdir $remote;
 	}
 }
 
@@ -163,4 +175,5 @@ if (-d $real) {
 	exit 0 if !(<STDIN> =~ /^y$/);
 }
 
-daemonize(\&main);
+#daemonize(\&main);
+&main;
