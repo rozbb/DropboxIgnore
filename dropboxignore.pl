@@ -81,7 +81,16 @@ sub sync_files {
 			$empty = 0;
 		}
 
-		if (!defined($to_link{$file})) {
+		# If real file exists, move it locally and link it
+		if (-f "$remote/$file" && !-l "$remote/$file") {
+			debug("Moving \"$remote/$file\" to \"$local\"");
+			move("$remote/$file", "$local/$file");
+			symlink("$local/$file", "$remote/$file\n");
+		}
+
+		# If original file was deleted, delete link
+		elsif (!defined($to_link{$file})) {
+			debug("Removing link \"$remote/$file\"\n");
 			unlink "$remote/$file";
 		}
 	}
