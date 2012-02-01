@@ -13,12 +13,13 @@ Then, to run the script, the command-line syntax is simply:
 	perl dropboxignore.pl <path/to/local/store> <path/to/Dropbox>
 
 Now let the magic* do it's work.
+Additionally, a "lock" file can be specified. All this does is act as an indicator to the running program that, when the file exists, it needs to stop immediately. The file is specified with the command line parameter -l &lt;lock/file/path&gt;.
 
 To stop, you must type in
 
-	kill <pid>
+	perl dropboxignore.pl stop
 
-Where &lt;pid&gt; is the number from the line "Child is &lt;number&gt;" that printed when you ran the command to start the script. There will be a script to do this for you in the future.
+Where &lt;pid&gt; is the number from the line "Child is &lt;number&gt;" that printed when you ran the command to start the script. Again, you may use the -l parameter with this command.
 
 <br>
 <br>

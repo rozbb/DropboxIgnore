@@ -3,18 +3,20 @@
 use warnings;
 use strict;
 
-use constant DEBUG => 1;
+use constant DEBUG => 0;
+use Switch;
 use File::Path "make_path";
 use File::Copy "move";
+use File::Touch;
 use Cwd "abs_path";
 
-my $real = abs_path($ARGV[0]);
-my $linked = abs_path($ARGV[1]);
 my $ignorefile = ".dropboxignore";
+my $lockfile = "/var/lock/dropboxignore.lck";
+my $cachefile = "/usr/share/dropboxignore/cache.txt";
+
+my ($linked, $real);
 
 my %linked_files;
-
-debug("Real is $real\nLinked is $linked\n");
 
 sub debug {
 	my $pretxt;
@@ -71,7 +73,10 @@ sub sync_files {
 		}
 	}
 
-	opendir(my $dh, "$remote");
+	my $dh;
+	if (!opendir($dh, $remote)) {
+		return;   # Failed to open directory (doesn't exist)
+	}
 
 	my $empty = 1;
 
@@ -105,7 +110,7 @@ sub loadignore {
 	my ($base, $subdir) = @_;
 	my $fulldir = "$base/$subdir";
 	my ($dh, $IGN_FILE);
-	if (!opendir($dh, "$fulldir") ||
+	if (!opendir($dh, $fulldir) ||
 		!open($IGN_FILE, "<$fulldir/$ignorefile")) {
 		die if DEBUG;
 		return -1;
@@ -173,15 +178,67 @@ sub iterate {
 	debug("Backing out...\n\n");
 }
 
+sub usage {
+	print "\nUsage:\n\n";
+	print "[stop]\n";
+	print "[-l] <path to lock file>\n\n";
+}
+
 sub main {
-	while (!(-e "/var/lock/stopdropboxignore")) {
+	if (!touch($lockfile) || !unlink $lockfile) {
+		die "Error preparing lock file!\nExiting...\n";
+	}
+
+	while (!(-e $lockfile)) {
 		iterate($real);
+	}
+	unlink $lockfile;
+}
+
+my $action = $ARGV[0];
+my $stop;
+
+if ($action eq "stop") {
+	$stop = 1;
+
+	if ($#ARGV > 1 && $ARGV[1] eq "-l") {
+		$lockfile = $ARGV[2];
+	}
+
+	if (!touch($lockfile)) {
+		die "Error creating lock file!\n";
+	}
+
+	exit;
+
+} else {
+	if ($#ARGV < 2) {
+		usage;
+		exit;
+	}
+
+	$real = abs_path($ARGV[0]);
+	$linked = abs_path($ARGV[1]);
+
+	debug("Real is $real\nLinked is $linked\n");
+
+	if (-d $real) {
+		print "Directory already exists, are you sure you want to continue?[y/n] ";
+		exit 0 if !(<STDIN> =~ /^y$/);
 	}
 }
 
-if (-d $real) {
-	print "Directory already exists, are you sure you want to continue?[y/n] ";
-	exit 0 if !(<STDIN> =~ /^y$/);
+for my $argnum (2..$#ARGV) {
+	if (substr($ARGV[$argnum], 0, 1) eq "-") {
+		switch (substr($ARGV[$argnum], 1, 1)) {
+			case "l" { $lockfile = $ARGV[$argnum+1];}
+			else {usage; exit;}
+		}
+	}
+}
+
+if ($stop) {
+	touch($lockfile);
 }
 
 #daemonize(\&main);

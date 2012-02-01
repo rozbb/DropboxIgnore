@@ -1,8 +1,4 @@
-* <b>Allow deleted files from the real (working) directory to be deleted in Dropbox and vice-versa</b>
-* <b>Allow syncing</b>
 * Automatically stop Dropbox, change link path, and set up real path in old Dropbox path
-* Fix command line options and errors
-* Write command line usage
-* Create script to politely stop the process
+* Tighten up command-line usage
 * ????
 * PROFIT!!!
