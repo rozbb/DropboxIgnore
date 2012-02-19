@@ -3,7 +3,7 @@
 use warnings;
 use strict;
 
-use constant DEBUG => 0;
+use constant DEBUG => 1;
 use Switch;
 use File::Path "make_path";
 use File::Copy "move";
@@ -11,8 +11,11 @@ use File::Touch;
 use Cwd "abs_path";
 
 my $ignorefile = ".dropboxignore";
-my $lockfile = "/var/lock/dropboxignore.lck";
-my $cachefile = "/usr/share/dropboxignore/cache.txt";
+my $defaultLockFile = "/var/lock/dropboxignore.lck";
+my $defaultCacheFile = "/usr/share/dropboxignore/cache.txt";
+
+my $lockFile = $defaultLockFile;
+my $cacheFile = $defaultCacheFile;
 
 my ($linked, $real);
 
@@ -62,11 +65,11 @@ sub sync_files {
 		if (!-e "$remote/$file") {
 			# If link is deleted, so must be the hard file to it
 			if ($linked_files{"$local/$file"}) { # If we know it has been linked in the past (not new)
-				debug("Original $file has been deleted\n");
+				debug("Link $file has been deleted\n");
 				unlink "$local/$file";
 				delete $linked_files{"$local/$file"};
 			} elsif (!-d "$local/$file") {
-				dosymlink($local, "$remote", $file);
+				dosymlink($local, $remote, $file);
 				debug("Linked $local/$file\n");
 				$linked_files{"$local/$file"} = 1;
 			}
@@ -97,6 +100,7 @@ sub sync_files {
 		elsif (!defined($to_link{$file})) {
 			debug("Removing link \"$remote/$file\"\n");
 			unlink "$remote/$file";
+			delete $linked_files{"$local/$file"};
 		}
 	}
 
@@ -120,7 +124,7 @@ sub loadignore {
 
 	my @no_link;
 
-	while(my $line = readline($IGN_FILE)) {
+	while(my $line = <$IGN_FILE>) {
 		chomp $line;
 		foreach my $file (@files) {
 			# We don't want to link to "." or ".."
@@ -135,6 +139,8 @@ sub loadignore {
 			}
 		}
 	}
+	foreach (@no_link) {debug "Unlinking $fulldir/$_\n"; delete $linked_files{"$fulldir/$_"};}
+	close $IGN_FILE;
 	debug("\@no_link = @no_link\n");
 	delete @to_link{@no_link};
 	sync_files($fulldir, "$linked/$subdir", keys %to_link)
@@ -185,34 +191,82 @@ sub usage {
 }
 
 sub main {
-	if (!touch($lockfile) || !unlink $lockfile) {
-		die "Error preparing lock file!\nExiting...\n";
+	if (!touch $lockFile) {
+		$lockFile = $defaultLockFile;
+		if (!touch $lockFile) {
+				die "Error preparing lock file!\nExiting...\n";
+		}
 	}
 
-	while (!(-e $lockfile)) {
+	unlink $lockFile;
+
+	if (!-e $cacheFile) {
+		print "Cache file doesn't exist. Creating...\n";
+	}
+
+	debug("Opening cacheFile\n");
+	my $fd;
+	unless (open $fd, "<$cacheFile") {
+		print "Error opening cache file ($cacheFile)! Using default\n";
+		$cacheFile = $defaultCacheFile;
+		unless (open $fd, "<$cacheFile") {
+			die "Error opening default cache file! ($defaultCacheFile)\n";
+		}
+	}
+
+	debug("Reading from cacheFile ($cacheFile)...\n");
+	while (<$fd>) {
+		chomp;
+		if (-e) {
+			$linked_files{$_} = 1;
+			debug("Set linked_files{$_}\n");
+		}
+	}
+
+	debug("Before while\n");
+	if (-e $lockFile) {
+		debug("There's the problem!\n");
+	}
+	debug("Used lockfile: $lockFile\n");
+
+	while (!(-e $lockFile)) {
 		iterate($real);
 	}
-	unlink $lockfile;
+
+	unlink $lockFile;
+	unlink $cacheFile;
+	if (open my $fd, ">$cacheFile") {
+		foreach (keys %linked_files) {
+			print $fd "$_\n";
+		}
+	} else {
+		die "Error writing to cache file ($cacheFile)\n";
+	}
 }
 
 my $action = $ARGV[0];
 my $stop;
 
+if ($#ARGV < 0) {
+	usage;
+	exit;
+}
+
 if ($action eq "stop") {
 	$stop = 1;
 
 	if ($#ARGV > 1 && $ARGV[1] eq "-l") {
-		$lockfile = $ARGV[2];
+		$lockFile = $ARGV[2];
 	}
 
-	if (!touch($lockfile)) {
+	if (!touch($lockFile)) {
 		die "Error creating lock file!\n";
 	}
 
 	exit;
 
 } else {
-	if ($#ARGV < 2) {
+	if ($#ARGV < 1) {
 		usage;
 		exit;
 	}
@@ -231,14 +285,15 @@ if ($action eq "stop") {
 for my $argnum (2..$#ARGV) {
 	if (substr($ARGV[$argnum], 0, 1) eq "-") {
 		switch (substr($ARGV[$argnum], 1, 1)) {
-			case "l" { $lockfile = $ARGV[$argnum+1];}
+			case "l" { $lockFile = $ARGV[$argnum+1];}
+			case "c" { $cacheFile = $ARGV[$argnum+1];}
 			else {usage; exit;}
 		}
 	}
 }
 
 if ($stop) {
-	touch($lockfile);
+	touch($lockFile);
 }
 
 #daemonize(\&main);
